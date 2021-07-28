@@ -10,6 +10,28 @@ from matplotlib.figure import Figure
 import copy
 import networkx as nx
 
+config = {
+    'task_difficulty': 'easy',
+    'easy': {
+        'n_occluders': 2,
+        'occluder_size_mean': 2.5,
+        'occluder_size_var': 0.1,
+        'pos': ['c', 'c']
+    },
+    'medium': {
+        'n_occluders': 5,
+        'occluder_size_mean': 1.5,
+        'occluder_size_var': 0.1,
+        'pos': ['u', 'd', 'l', 'r', 'c']
+    },
+    'hard': {
+        'n_occluders': 8,
+        'occluder_size_mean': 0.8,
+        'occluder_size_var': 0.1,
+        'pos': ['u', 'd', 'l', 'r', 'c', 'c', 'c', 'c']
+    }
+}
+
 def pick_top_k(nlabels, label_im, k):
     component_sizes = [np.where(label_im == i)[0].shape[0] for i in range(1,nlabels)]
     return np.flip(np.argsort(component_sizes)[-k:] + 1)
@@ -33,142 +55,6 @@ def regularize(x, y):
     xn = x[idx]
     yn = y[idx]
     return xn, yn
-
-# remove examples close to the boundary
-# positive samples in two different islands
-# introduce clutter
-# introduce difficulty levels
-def gen_stim(obj_database, 
-             idx,
-             contour_thickness=1,
-             contour_length=5,
-             contour_sep=5):
-
-    # create the canvas
-    h,w = 224, 224
-    target_im = np.zeros((h,w))
-    n_objects = len(obj_database)    
-    idxrand = np.random.randint(n_objects,size=2) 
-    
-    # extract the first object
-    im1 = obj_database[idxrand[0]]
-    
-    rot = np.random.randint(low=0, high=360)
-    scale = 0.5 + np.random.rand()*2
-    im1 = imutils.rotate_bound(im1.astype(np.uint8), rot)
-    im1 = cv2.resize(im1, (int(im1.shape[0]*scale), int(im1.shape[1]*scale)))
- 
-    '''
-    coords = np.where(label_im == components[1])    
-    xmin, xmax, ymin, ymax = coords[0].min(), coords[0].max(), coords[1].min(), coords[1].max()
-    im1 = label_im[xmin:xmax, ymin:ymax] == components[1]
-    '''
-    im1_dims = im1.shape
-
-    # extract the second object
-    im2 = obj_database[idxrand[1]]
-    rot = np.random.randint(low=0, high=360)
-    scale = 0.5 + np.random.rand()*2
-    im2 = imutils.rotate_bound(im2.astype(np.uint8), rot)
-    im2 = cv2.resize(im2, (int(im2.shape[0]*scale), int(im2.shape[1]*scale)))
- 
-    '''
-    coords = np.where(label_im == components[0])    
-    xmin, xmax, ymin, ymax = coords[0].min(), coords[0].max(), coords[1].min(), coords[1].max()
-    im2 = label_im[xmin:xmax, ymin:ymax] == components[0]
-    '''
-    im2_dims = im2.shape
-
-    # pick random offsets for the two objects
-    lH, lW = max(im1.shape[0], im2.shape[0]), max(im1.shape[1], im2.shape[1]) 
-    rx1, ry1 = np.random.randint(max(1, h - lH)), np.random.randint(max(1, w - lW))
-
-    # draw on the canvas
-    offx, offy = np.random.randint(0, 10), np.random.randint(0, 10)
-
-    ulx = min(0, target_im.shape[0] - rx1 - im1.shape[0])
-    uly = min(0, target_im.shape[1] - ry1 - im1.shape[1])
-    target_im[rx1:rx1+im1.shape[0], ry1:ry1+im1.shape[1]] = im1[:(im1_dims[0]+ulx), :(im1_dims[1]+uly)]
-
-    ulx = min(0, target_im.shape[0] - offx - rx1 - im2.shape[0])
-    uly = min(0, target_im.shape[1] - offy - ry1 - im2.shape[1]) 
-    target_im[rx1+offx:rx1+offx+im2.shape[0], ry1+offy:ry1+offy+im2.shape[1]] = np.logical_or(target_im[rx1+offx:rx1+offx+im2.shape[0], ry1+offy:ry1+offy+im2.shape[1]], im2[:(im2_dims[0]+ulx), :(im2_dims[1]+uly)])
-
-    # get the position of the X mark
-    cross_x, cross_y = np.random.randint(low=10,high=h-10), np.random.randint(low=10, high=w-10)
-
-    # find the contours from the thresholded image
-    contours, hierarchy = cv2.findContours(target_im.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS)
-    contours = [x for x in contours if x.shape[0] > 10]    
-
-    color_im = np.tile(target_im[:,:,np.newaxis],(1,1,3)).astype(np.uint8)
-    color_im2 = np.zeros_like(color_im)
-    
-    # draw all contours
-    #target_im = cv2.drawContours(color_im, contours, -1, (255, 255, 255), 2)
-    func = S.filters.gaussian_filter1d
-
-    ZZ = np.vstack(contours).squeeze()
-    cv2.fillPoly(color_im2, pts=[ZZ], color=(255,255,255))
-
-    M = cv2.moments(contours[0])         
-    cX = int(M["m10"] / M["m00"])
-    cY = int(M["m01"] / M["m00"])
-
-    label = (color_im2[cross_y, cross_x] == 255)
-    label = label.any()    
-    prefix = 'neg'
-    if label:
-        prefix = 'pos'
-
-    dpi=96
-    fig = plt.figure(figsize=(224/dpi, 224/dpi), dpi=dpi)
-    ax = fig.add_subplot(111)
-    ax.imshow(color_im)
-
-    for contour in contours:
-        xlist = list(contour[:,0,0])
-        ylist = list(contour[:,0,1])
-        ax.plot(xlist, ylist, '--', linewidth=contour_thickness, dashes=(contour_length, contour_sep), color=[1,1,1])
-    
-    ax.scatter(cross_x, cross_y, 25, 'w')
-    ax.scatter(cX, cY, 25, 'w')
-    ax.axis('tight')
-    ax.axis('off') 
-    plt.savefig('/media/data_cifs/projects/prj_neural_circuits/insideness/%s/stim_image_%06d.png'%(prefix, idx), dpi=dpi, bbox_inches='tight', pad_inches=0)
-    plt.close()
- 
-    '''
-    dpi = 96
-    fig = Figure((224/dpi, 224/dpi), dpi=dpi)
-    canvas = FigureCanvas(fig)
-    ax = fig.gca()
-
-    ax.imshow(color_im)
-    for contour in contours:
-        xlist = list(contour[:,0,0])
-        ylist = list(contour[:,0,1])
-        ax.plot(xlist, ylist, '--', linewidth=contour_thickness, dashes=(contour_length, contour_sep), color=[1,1,1])
-    
-    ax.scatter(cross_x, cross_y, 25, 'w')
-    ax.scatter(cX, cY, 25, 'w')
-    ax.axis('off')
-    plt.tight_layout()
-    canvas.draw()
-    image = np.fromstring(canvas.tostring_rgb(), dtype='uint8').reshape(224,224,3)
-
-    prefix = 'neg'
-    if label:
-        prefix = 'pos'
-
-    plt.show()
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    #cv2.putText(color_im, 'X', (cross_y, cross_x), font, 0.4, (0, 255, 255), 1, cv2.LINE_AA)
-    #cv2.circle(color_im, (cross_y, cross_x), 5, (255,255,255), -1)
-    cv2.imwrite('/media/data_cifs/projects/prj_neural_circuits/insideness/%s/stim_image_%06d.png'%(prefix, idx), image)
-    #plt.savefig('/media/data_cifs/projects/prj_neural_circuits/insideness/%s/stim_image_%06d.png'%(prefix, idx))
-    plt.close()
-    '''
 
 def gen_path(sx,sy, radius=5, length=14):
     path_x, path_y = [sx], [sy]
@@ -281,7 +167,7 @@ def check_path_exists(target_im, kernel, path_y, path_x):
 
     return outim, nx.has_path(G, start_node, end_node)
 
-def gen_negative_trial(fake_target_im, path_x, path_y, obj_database, rad, im_idx, res_dir):
+def gen_trial(fake_target_im, path_x, path_y, obj_database, rad, dset_info, res_dir):
 
     start_im = np.zeros_like(fake_target_im)
     end_im = np.zeros_like(fake_target_im)
@@ -291,26 +177,37 @@ def gen_negative_trial(fake_target_im, path_x, path_y, obj_database, rad, im_idx
     finished = False
     stim_num = 1
 
+    # Determine the trial type [0 (negative) / 1 (positive)]
+    trial_choice = np.random.choice(2)
+    is_neg_trial = True
+    if trial_choice == 1:
+        is_neg_trial = False
+
     while not finished:
-        print(stim_num)
-        stim_num+=1
 
         target_im = np.zeros_like(fake_target_im)
         
-        # randomly pick 7 objects from the object database
-        shuff_objs = np.random.permutation(len(obj_database))[:7]
-        order = ['u', 'd', 'l', 'r', 'c', 'c', 'c']
+        # randomly pick occluders from the database, as per task difficulty
+        n_objs = config[config['task_difficulty']]['n_occluders']
+        obj_size = config[config['task_difficulty']]['occluder_size_mean']
+        obj_size_var = config[config['task_difficulty']]['occluder_size_var']
+
+        shuff_objs = np.random.permutation(len(obj_database))[:n_objs]
+        order = config[config['task_difficulty']]['pos']
+
         for idx, obj in enumerate(shuff_objs):
             im = obj_database[obj]
             condition_satisfied = False
             c_iter = 0       
-            while not condition_satisfied and c_iter < 10:
+            while not condition_satisfied and c_iter < 30:
                 c_iter += 1
 
                 # (pos, rot, scale)
                 p,q = np.random.randint(low=0, high=224), np.random.randint(low=0, high=224)
                 rot = np.random.randint(low=0, high=360)
-                scale = 0.5 + np.random.rand()*1.
+                scale = np.random.normal(loc=obj_size, scale=obj_size_var)
+                #scale = 0.5 + np.random.rand()*1.
+
                 rot_im = imutils.rotate_bound(im.astype(np.uint8), rot)
                 rot_im = cv2.resize(rot_im, (int(rot_im.shape[0]*scale), int(rot_im.shape[1]*scale)))
                 dims = rot_im.shape
@@ -341,14 +238,117 @@ def gen_negative_trial(fake_target_im, path_x, path_y, obj_database, rad, im_idx
                 y2 = min(loc[1]+sh[1],224)
 
                 target_im_copy[x1:x2, y1:y2] = rot_im[:(x2-x1), :(y2-y1)]   
-                #import ipdb; ipdb.set_trace()            
-                if np.logical_and(target_im_copy, fake_target_im).any() and (not np.logical_and(target_im_copy, start_im).any()) and (not np.logical_and(target_im_copy, end_im).any()):
+                #if np.logical_and(target_im_copy, fake_target_im).any() and (not np.logical_and(target_im_copy, start_im).any()) and (not np.logical_and(target_im_copy, end_im).any()):
+                if (not np.logical_and(target_im_copy, start_im).any()) and (not np.logical_and(target_im_copy, end_im).any()):
+                    target_im[x1:x2, y1:y2] = rot_im[:(x2-x1), :(y2-y1)] 
+                    condition_satisfied = True
+        
+            if condition_satisfied != True:
+                return False
+
+        outim, retval = check_path_exists(target_im, kernel, path_x, path_y)
+        finished = (is_neg_trial == (not retval))
+
+    # find the contours from the thresholded image
+    contours, hierarchy = cv2.findContours(target_im.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS)
+    
+    # draw all contours
+    color_im = np.tile(target_im[:,:,np.newaxis],(1,1,3)).astype(np.uint8)
+    color_im = cv2.drawContours(color_im, contours, -1, (255, 255, 255), 2)
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.circle(color_im, (path_x[-1], path_y[-1]), rad, (255, 255, 255), 2)    
+   
+    # draw the circle
+    cv2.circle(color_im, (path_x[0], path_y[0]), rad, (255, 255, 255), -1)
+    if is_neg_trial:
+        dset_info['neg'] += 1
+        im_idx = dset_info['neg']
+        cv2.imwrite(os.path.join(res_dir, 'neg', 'stim_image_neg_%06d.png'%im_idx), color_im)
+    else:
+        dset_info['pos'] += 1
+        im_idx = dset_info['pos']
+        cv2.imwrite(os.path.join(res_dir, 'pos', 'stim_image_pos_%06d.png'%im_idx), color_im)
+
+    return True
+
+def gen_negative_trial(fake_target_im, path_x, path_y, obj_database, rad, im_idx, res_dir):
+
+    start_im = np.zeros_like(fake_target_im)
+    end_im = np.zeros_like(fake_target_im)
+    cv2.circle(start_im, (path_x[0], path_y[0]), rad, (255, 255, 255), -1)    
+    cv2.circle(end_im, (path_x[-1], path_y[-1]), rad, (255, 255, 255), -1)    
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(2*rad,2*rad))
+    finished = False
+    stim_num = 1
+
+    while not finished:
+        print(stim_num)
+        stim_num+=1
+
+        target_im = np.zeros_like(fake_target_im)
+        
+        # randomly pick occluders from the database, as per task difficulty
+        n_objs = config[config['task_difficulty']]['n_occluders']
+        obj_size = config[config['task_difficulty']]['occluder_size_mean']
+        obj_size_var = config[config['task_difficulty']]['occluder_size_var']
+
+        shuff_objs = np.random.permutation(len(obj_database))[:n_objs]
+        order = config[config['task_difficulty']]['pos']
+
+
+        for idx, obj in enumerate(shuff_objs):
+            im = obj_database[obj]
+            condition_satisfied = False
+            c_iter = 0       
+            while not condition_satisfied and c_iter < 30:
+                c_iter += 1
+
+                # (pos, rot, scale)
+                p,q = np.random.randint(low=0, high=224), np.random.randint(low=0, high=224)
+                rot = np.random.randint(low=0, high=360)
+                scale = np.random.normal(loc=obj_size, scale=obj_size_var)
+                #scale = 0.5 + np.random.rand()*1.
+
+                rot_im = imutils.rotate_bound(im.astype(np.uint8), rot)
+                rot_im = cv2.resize(rot_im, (int(rot_im.shape[0]*scale), int(rot_im.shape[1]*scale)))
+                dims = rot_im.shape
+     
+                if order[idx] == 'u':
+                    rot_im = rot_im[int(np.floor(dims[0]/2)):, :]
+                    loc = (int(np.floor(dims[0]/4)),q)
+                elif order[idx] == 'd':
+                    rot_im = rot_im[:int(np.floor(dims[0]/2)), :]
+                    loc = (223-int(np.floor(dims[0]/4)),q)
+                elif order[idx] == 'l':
+                    loc = (p,0)
+                    rot_im = rot_im[:, int(np.floor(dims[1]/2)):]
+                    loc = (p, int(np.floor(dims[1]/4)))
+                elif order[idx] == 'r':
+                    rot_im = rot_im[:, :int(np.floor(dims[1]/2))]
+                    loc = (p, 223-int(np.floor(dims[1]/4)))
+                else:
+                    loc = (p,q)
+                
+                # need to check if this satisfies
+                sh = [int(np.floor(rot_im.shape[0]/2)), int(np.floor(rot_im.shape[1]/2))]
+                target_im_copy = copy.deepcopy(target_im)
+                x1 = max(loc[0]-sh[0],0)
+                x2 = min(loc[0]+sh[0],224)
+
+                y1 = max(loc[1]-sh[1],0)
+                y2 = min(loc[1]+sh[1],224)
+
+                target_im_copy[x1:x2, y1:y2] = rot_im[:(x2-x1), :(y2-y1)]   
+                #if np.logical_and(target_im_copy, fake_target_im).any() and (not np.logical_and(target_im_copy, start_im).any()) and (not np.logical_and(target_im_copy, end_im).any()):
+                if (not np.logical_and(target_im_copy, start_im).any()) and (not np.logical_and(target_im_copy, end_im).any()):
                     target_im[x1:x2, y1:y2] = rot_im[:(x2-x1), :(y2-y1)] 
                     condition_satisfied = True
         
             if condition_satisfied != True:
                 return
 
+        import ipdb; ipdb.set_trace()
         outim, retval = check_path_exists(target_im, kernel, path_x, path_y)
         finished = not retval
 
@@ -378,7 +378,7 @@ def make_obj_database():
 
     # make a database of objects
     for idx in tqdm.tqdm(range(200)):
-        mask = cv2.imread('Desktop/synthetic_objects/image_%06d.png'%idx)
+        mask = cv2.imread('/home/lakshmi/Desktop/synthetic_objects/image_%06d.png'%idx)
         mask_gray = mask[:,:,0]
 
         # get the connected components
@@ -416,14 +416,13 @@ def make_obj_database():
     return obj_database
 
 
-def gen_maze_stim(obj_database, im_idx, res_dir):
+def gen_maze_stim(obj_database, dset_info, res_dir):
     # create the canvas
     h,w = 224, 224
-    target_im = np.zeros((h,w))
-    fake_target_im = np.zeros((h,w))
 
-    # get the path 
-    while True:
+    # generate a random path 
+    trial_complete = False
+    while not trial_complete:
         # create a ball of random radius
         rad = np.random.randint(low=10, high=20)
 
@@ -432,32 +431,28 @@ def gen_maze_stim(obj_database, im_idx, res_dir):
         start_y = np.random.randint(low=0, high=224)
         #length = np.random.randint(low=5, high=10)
         length = 8
+
         path_x, path_y = gen_path(start_x, start_y, radius=rad, length=length)
         X = np.logical_and(path_x < (224-rad), path_x > rad)
         Y = np.logical_and(path_y < (224-rad), path_y > rad)
+
         if X.all() and Y.all():
-            break
+            target_im = np.zeros((h,w))
+            fake_target_im = np.zeros((h,w))
 
-    # make a "fake" target image
-    for k in range(len(path_x)):
-        cv2.circle(fake_target_im, (path_x[k], path_y[k]), rad, (255, 255, 255), -1)
+            for k in range(len(path_x)):
+                cv2.circle(fake_target_im, (path_x[k], path_y[k]), rad, (255, 255, 255), -1)
 
-    #plt.imshow(fake_target_im)
-    #plt.show(block=False)
-
-    # 0: negative, 1: positive
-    trial_type = np.random.choice(2)
-    gen_positive_trial(fake_target_im, path_x, path_y, obj_database, rad, im_idx, res_dir)
-    gen_negative_trial(fake_target_im, path_x, path_y, obj_database, rad, im_idx, res_dir)
-   
+            trial_complete = gen_trial(fake_target_im, path_x, path_y, obj_database, rad, dset_info, res_dir)
+         
 def main():
     obj_database = make_obj_database() 
     res_dir = '/media/data_cifs/projects/prj_neural_circuits/maze'
-    for k in tqdm.tqdm(range(100)):
-        gen_maze_stim(obj_database, k, res_dir)
+    dset_info = {'pos':0, 'neg':0}
 
-    #for k in tqdm.tqdm(range(100)):
-    #    gen_stim(obj_database, k)
+    for k in tqdm.tqdm(range(100)):
+        gen_maze_stim(obj_database, dset_info, res_dir)
+
 
 if __name__ == '__main__':
     main()
