@@ -104,9 +104,9 @@ def gen_trial(fake_target_im, path_x, path_y, obj_database, rad, dset_info, res_
 
     start_im = np.zeros_like(fake_target_im)
     end_im = np.zeros_like(fake_target_im)
-    cv2.circle(start_im, (path_x[0], path_y[0]), rad, (255, 255, 255), -1)    
-    cv2.circle(end_im, (path_x[-1], path_y[-1]), rad, (255, 255, 255), -1)    
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(2*rad,2*rad))
+    cv2.circle(start_im, (path_x[0], path_y[0]), 2*rad, (255, 255, 255), -1)    
+    cv2.circle(end_im, (path_x[-1], path_y[-1]), 2*rad, (255, 255, 255), -1)    
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(2*rad + 1, 2*rad + 1))
     finished = False
     stim_num = 1
 
@@ -181,6 +181,17 @@ def gen_trial(fake_target_im, path_x, path_y, obj_database, rad, dset_info, res_
                 return False
 
         outim, retval = check_path_exists(target_im, kernel, path_x, path_y)
+
+        if False:
+            plt.subplot(121); 
+            plt.imshow(outim); 
+            plt.subplot(122); 
+            plt.imshow(target_im);
+            plt.imshow(start_im, alpha=0.25);
+            plt.imshow(end_im, alpha=0.25); 
+            plt.show();
+
+            import ipdb; ipdb.set_trace()
         finished = (is_neg_trial == (not retval))
 
     # find the contours from the thresholded image
@@ -197,7 +208,7 @@ def gen_trial(fake_target_im, path_x, path_y, obj_database, rad, dset_info, res_
     cv2.circle(color_im, (path_x[0], path_y[0]), rad, (255, 255, 255), -1)
 
     im_idx = dset_info[trial_type]
-    cv2.imwrite(os.path.join(res_dir, trial_type, 'stim_image_%s_%06d.png'%(trial_type,im_idx), color_im)
+    cv2.imwrite(os.path.join(res_dir, trial_type, 'stim_image_%s_%06d.png'%(trial_type,im_idx)), color_im)
     dset_info[trial_type] += 1
 
     return True
@@ -209,7 +220,7 @@ def make_obj_database():
     kernel = np.ones((25,25), np.float32)/625
 
     # make a database of objects
-    for idx in tqdm.tqdm(range(200)):
+    for idx in tqdm.tqdm(range(400)):
         mask = cv2.imread('/home/lakshmi/Desktop/synthetic_objects/image_%06d.png'%idx)
         mask_gray = mask[:,:,0]
 
@@ -218,6 +229,7 @@ def make_obj_database():
         # let us assume we pick the first two for now
         n_objects = min(2,nlabels)
 
+        #import ipdb; ipdb.set_trace()
         if n_objects == 0:
             continue
 
@@ -233,7 +245,7 @@ def make_obj_database():
         obj_database.update({obj_id:im1})
         obj_id += 1
 
-        if n_objects == 2:        
+        if (n_objects == 2) and components.shape[0] > 1:        
             # extract the second object
             coords = np.where(label_im == components[1])    
             if coords[0].shape[0] < 50:
@@ -256,13 +268,12 @@ def gen_maze_stim(obj_database, dset_info, res_dir):
     trial_complete = False
     while not trial_complete:
         # create a ball of random radius
-        rad = np.random.randint(low=5, high=20)
+        rad = np.random.randint(low=10, high=30)
 
         # create a path (must control for length)
         start_x = np.random.randint(low=0, high=224)
         start_y = np.random.randint(low=0, high=224)
         length = np.random.randint(low=5, high=10)
-        #length = 8
 
         path_x, path_y = gen_path(start_x, start_y, radius=rad, length=length)
         X = np.logical_and(path_x < (224-rad), path_x > rad)
@@ -282,7 +293,7 @@ def main():
     res_dir = '/media/data_cifs/projects/prj_neural_circuits/maze'
     dset_info = {'pos':0, 'neg':0}
 
-    for k in tqdm.tqdm(range(100)):
+    for k in tqdm.tqdm(range(200000)):
         gen_maze_stim(obj_database, dset_info, res_dir)
 
 
