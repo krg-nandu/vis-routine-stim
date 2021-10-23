@@ -34,8 +34,6 @@ def regularize(x, y):
     yn = y[idx]
     return xn, yn
 
-# remove examples close to the boundary
-# positive samples in two different islands
 # introduce clutter
 # introduce difficulty levels
 def gen_stim(obj_database, 
@@ -99,6 +97,9 @@ def gen_stim(obj_database,
     contours, hierarchy = cv2.findContours(target_im.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS)
     contours = [x for x in contours if x.shape[0] > 10]    
 
+    if len(contours) > 1:
+        return False
+
     color_im = np.tile(target_im[:,:,np.newaxis],(1,1,3)).astype(np.uint8)
     color_im2 = np.zeros_like(color_im)
     
@@ -150,6 +151,8 @@ def gen_stim(obj_database,
     plt.savefig(os.path.join(res_dir, '%s/stim_image_%06d.png'%(prefix, idx)), dpi=dpi, bbox_inches='tight', pad_inches=0)
     plt.close()
 
+    return True
+
 def make_obj_database():
     obj_database = {}
     obj_id = 0
@@ -197,8 +200,15 @@ def make_obj_database():
 def main():
     obj_database = make_obj_database() 
     res_dir = '/media/data_cifs/projects/prj_neural_circuits/insideness'
-    for k in tqdm.tqdm(range(100)):
-        gen_stim(obj_database, k, res_dir)
+    N_SAMPLES = 1e5
+    k = 0
+
+    while k < 100:
+        if k%1000 == 0:
+            print('Generated {} samples'.format(k))
+        ret = gen_stim(obj_database, k, res_dir)
+        if ret:
+            k += 1
 
 if __name__ == '__main__':
     main()
