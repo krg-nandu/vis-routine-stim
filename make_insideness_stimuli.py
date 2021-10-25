@@ -97,7 +97,7 @@ def gen_stim(obj_database,
     contours, hierarchy = cv2.findContours(target_im.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_TC89_KCOS)
     contours = [x for x in contours if x.shape[0] > 10]    
 
-    if len(contours) > 1:
+    if len(contours) != 1:
         return False
 
     color_im = np.tile(target_im[:,:,np.newaxis],(1,1,3)).astype(np.uint8)
@@ -203,7 +203,7 @@ def main():
     N_SAMPLES = 1e5
     k = 0
 
-    while k < 100:
+    while k < N_SAMPLES:
         if k%1000 == 0:
             print('Generated {} samples'.format(k))
         ret = gen_stim(obj_database, k, res_dir)
